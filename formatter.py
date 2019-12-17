@@ -9,6 +9,17 @@ def clean_sql(sql):
     return flat_sql
 
 
+def add_endl_after_word(word, text):
+    idx = 0
+    while idx < len(text):
+        index_l = text.lower().find(word.lower(), idx)
+        if index_l == -1:
+            return text
+        text = text[:index_l + len(word)] + '\n' + text[index_l + len(word):]
+        idx = index_l + len(word) + 1
+    return text
+
+
 def find_keywords(sql, keywords_list):
     """Find all the keywords in `sql`.
 
@@ -57,6 +68,7 @@ def line_keywords(sql, keyword_loc, wrap_keywords):
     """
     offset = 0
     for i in keyword_loc:
+        print(i)
         if i[0].lower() in wrap_keywords:
             sql = sql[:(i[1] + offset)] + '\n' + i[0] + '\n' + sql[(i[2] + offset):]
             offset += 2
@@ -67,10 +79,22 @@ def line_keywords(sql, keyword_loc, wrap_keywords):
     return sql
 
 
-def new_line_after_coma(sql):
-    """Add the addition wrap line key, such as ',' . """
+def coma_handler(sql):
     if config.new_line_after_comma:
         sql = sql.replace(',', ',' + '\n')
+    if config.space_before_coma:
+        sql = sql.replace(',', ' ,')
+    if config.space_after_coma:
+        sql = sql.replace(',', ', ')
+    return sql
+
+
+def space_arround_operators(sql):
+    if config.space_arround_operators:
+        for i in keywords.operators:
+            #pattern = re.compile('[^ ]' + i)
+            #sql = re.sub(r"\S" % i, ' ' + i, sql)
+            sql = sql.replace(i, ' ' + i + ' ')
     return sql
 
 
@@ -129,18 +153,40 @@ def add_indent(sql_list, wrap_keywords):
 
 def into_handler(sql):
     if config.move_into_to_a_new_line:
-        sql = sql.replace('insert into', 'insert' + '\n' + 'into')
-        sql = sql.replace('INSERT INTO', 'INSERT' + '\n' + 'INTO')
+        sql = add_endl_after_word('insert', sql)
     if config.move_clause_after_into_to_a_new_line:
-        sql = sql.replace('into', 'into' + '\n')
-        sql = sql.replace('INTO', 'INTO' + '\n')
+        sql = add_endl_after_word('into', sql)
     if config.new_line_after_comma_insert:
-        start = sql.find('VALUES')
+        start = sql.lower().find('values')
         while start != -1:
             end = sql.find(';', start+1)
             sql_substr = sql[start:end].replace('),', '),\n')
             sql = sql[:start] + sql_substr + sql[end:]
-            start = sql.find('VALUES', start+1)
+            start = sql.lower().find('values', start+1)
+    return sql
+
+
+def select_handler(sql):
+    if config.new_line_after_all_distinct:
+        sql = add_endl_after_word('all', sql)
+        sql = add_endl_after_word('distinct', sql)
+    if config.wrap_elements_select:
+        start = sql.lower().find('select')
+        while start != -1:
+            end = sql.lower().find('from', start + 1)
+            bracket_count = 0
+            cur_ind = start
+            for i in sql[start:end]:
+                if i == '(':
+                    bracket_count += 1
+                if i == ')':
+                    bracket_count -= 1
+                if i == ',' and bracket_count == 0:
+                    print(cur_ind)
+                    cur_ind += 1
+                    sql = sql[:cur_ind] + '\n' + sql[cur_ind:]
+                cur_ind += 1
+            start = sql.lower().find('select', start+1)
     return sql
 
 
@@ -157,13 +203,16 @@ def formatter(sql):  # , wrap_add=None):
     wrap_keywords_loc = find_keywords(flat_sql, keywords.wrap_keywords)
 
     sql = line_keywords(flat_sql, wrap_keywords_loc, keywords.wrap_keywords)
-    sql = new_line_after_coma(sql)
+    sql = coma_handler(sql)
+    sql = space_arround_operators(sql)
+    sql = into_handler(sql)
+    sql = select_handler(sql)
     sql_list = split_wrap(sql)
     sql_list = str_mode_change(sql_list, keywords.wrap_keywords, keywords.func_keywords)
-    # sql_list = add_indent(sql_list, keywords.wrap_keywords)
+    sql_list = add_indent(sql_list, keywords.wrap_keywords)
 
     format_sql = '\n'.join(sql_list)
-    format_sql = into_handler(format_sql)
+
     return format_sql
 
 
